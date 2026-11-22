@@ -32,6 +32,15 @@ jobs:
             shared/cpp/xml.cpp ios/native/AMProjectBridge.cpp ios/native/project_smoke.cpp \
             -lexpat -o build/native-test/scene_test
           build/native-test/scene_test
+      - name: Test time remap against original easing on macOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun --sdk macosx clang++ -std=c++20 -O2 -Ishared/cpp -Iios/native \
+            shared/cpp/easing.cpp ios/native/AMEasingBridge.cpp \
+            ios/native/AMVideoTiming.cpp ios/native/timing_smoke.cpp \
+            -o build/native-test/timing_test
+          build/native-test/timing_test
       - name: Compile original easing and scene parser for iOS ARM64
         shell: bash
         run: |
@@ -39,7 +48,7 @@ jobs:
           mkdir -p build/ios build/simulator
           IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
           IOS_CLANG="$(xcrun --sdk iphoneos --find clang++)"
-          for filename in easing AMEasingBridge xml AMProjectBridge; do
+          for filename in easing AMEasingBridge xml AMProjectBridge AMVideoTiming; do
             case "$filename" in
               easing|xml) SRC="shared/cpp/$filename.cpp" ;;
               *) SRC="ios/native/$filename.cpp" ;;
@@ -56,7 +65,7 @@ jobs:
               -isysroot "$SIM_SDK" -Ishared/cpp -Iios/native -c "$SRC" -o "build/simulator/$filename.o"
           done
           xcrun --sdk iphonesimulator libtool -static -o build/simulator/libAbsentMotionCore.a build/simulator/*.o
-          cp ios/native/AMEasingBridge.h ios/native/AMProjectBridge.h build/ios/
+          cp ios/native/AMEasingBridge.h ios/native/AMProjectBridge.h ios/native/AMVideoTiming.h build/ios/
       - name: Upload original native core for iOS
         uses: actions/upload-artifact@v4
         with:
@@ -65,5 +74,6 @@ jobs:
             build/ios/libAbsentMotionCore.a
             build/ios/AMEasingBridge.h
             build/ios/AMProjectBridge.h
+            build/ios/AMVideoTiming.h
             build/simulator/libAbsentMotionCore.a
           if-no-files-found: error
