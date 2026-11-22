@@ -1,0 +1,45 @@
+name: AbsentMotion iOS native-port app (experimental)
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/absentmotion-ios-app.yml"
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: absentmotion-ios-port
+          submodules: false
+      - name: Set up XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+      - name: Generate Xcode project from original-source branch
+        run: xcodegen generate --spec ios/project.yml
+      - name: Compile original AbsentMotion C++ plus iOS host
+        run: |
+          xcodebuild -project ios/AbsentMotionIOS.xcodeproj \
+            -scheme AbsentMotionIOS \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -configuration Release \
+            -derivedDataPath "$RUNNER_TEMP/AbsentBuild" \
+            CODE_SIGNING_ALLOWED=NO clean build
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$RUNNER_TEMP/AbsentBuild/Build/Products/Release-iphoneos/AbsentMotionIOS.app" "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qr "$GITHUB_WORKSPACE/AbsentMotion-iOS-experimental-unsigned.ipa" Payload)
+          unzip -l AbsentMotion-iOS-experimental-unsigned.ipa | grep -E 'Payload/AbsentMotionIOS.app/(AbsentMotionIOS|Info.plist)'
+      - name: Upload experimental IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: AbsentMotion-iOS-experimental-unsigned-IPA
+          path: AbsentMotion-iOS-experimental-unsigned.ipa
+          if-no-files-found: error
