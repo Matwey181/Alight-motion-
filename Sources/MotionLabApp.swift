@@ -157,7 +157,7 @@ final class MotionModel: ObservableObject {
                 guard let session=AVAssetExportSession(asset:comp,presetName:AVAssetExportPresetHighestQuality) else {throw NSError(domain:"Motion",code:4)}
                 let out=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+".mp4")
                 session.outputURL=out
-                session.outputFileType=.mp4
+                session.outputFileType = .mp4
                 await withCheckedContinuation { (continuation:CheckedContinuation<Void,Never>) in
                     session.exportAsynchronously { continuation.resume() }
                 }
