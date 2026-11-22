@@ -11,6 +11,7 @@ targets:
       - path: App
       - path: native/AMEasingBridge.cpp
       - path: native/AMProjectBridge.cpp
+      - path: native/AMVideoTiming.cpp
       - path: ../shared/cpp/easing.cpp
       - path: ../shared/cpp/xml.cpp
     settings:
