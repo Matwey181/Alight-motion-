@@ -1,0 +1,58 @@
+name: AbsentMotion original core iOS build
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/absentmotion-native-ios.yml"
+permissions:
+  contents: read
+jobs:
+  native-ios:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: absentmotion-ios-port
+          submodules: false
+      - name: Test original C++ easing on macOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/native-test
+          xcrun --sdk macosx clang++ -std=c++20 -O2 -Ishared/cpp \
+            shared/cpp/easing.cpp ios/native/AMEasingBridge.cpp ios/native/port_smoke.cpp \
+            -o build/native-test/easing_test
+          build/native-test/easing_test
+      - name: Compile original C++ easing to iOS arm64 static library
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/ios build/simulator
+          IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          IOS_CLANG="$(xcrun --sdk iphoneos --find clang++)"
+          for filename in easing AMEasingBridge; do
+            if [[ "$filename" == easing ]]; then SRC=shared/cpp/easing.cpp; else SRC=ios/native/AMEasingBridge.cpp; fi
+            "$IOS_CLANG" -std=c++20 -O2 -arch arm64 -miphoneos-version-min=17.0 \
+              -isysroot "$IOS_SDK" -Ishared/cpp -Iios/native -c "$SRC" -o "build/ios/$filename.o"
+          done
+          xcrun --sdk iphoneos libtool -static -o build/ios/libAbsentMotionCore.a build/ios/*.o
+          SIM_SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          SIM_CLANG="$(xcrun --sdk iphonesimulator --find clang++)"
+          for filename in easing AMEasingBridge; do
+            if [[ "$filename" == easing ]]; then SRC=shared/cpp/easing.cpp; else SRC=ios/native/AMEasingBridge.cpp; fi
+            "$SIM_CLANG" -std=c++20 -O2 -arch arm64 -mios-simulator-version-min=17.0 \
+              -isysroot "$SIM_SDK" -Ishared/cpp -Iios/native -c "$SRC" -o "build/simulator/$filename.o"
+          done
+          xcrun --sdk iphonesimulator libtool -static -o build/simulator/libAbsentMotionCore.a build/simulator/*.o
+          cp ios/native/AMEasingBridge.h build/ios/
+      - name: Upload original native core for iOS
+        uses: actions/upload-artifact@v4
+        with:
+          name: AbsentMotion-native-core-iOS
+          path: |
+            build/ios/libAbsentMotionCore.a
+            build/ios/AMEasingBridge.h
+            build/simulator/libAbsentMotionCore.a
+          if-no-files-found: error
