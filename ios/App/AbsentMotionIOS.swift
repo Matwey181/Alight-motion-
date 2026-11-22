@@ -160,6 +160,26 @@ final class MotionModel: ObservableObject {
         keys = presets[type].map { SpeedKey(time:$0.0,speed:$0.1) }
         chosen=nil
     }
+    // Full media-to-project timing table backed by the original AbsentMotion easing engine.
+    func makeNativeTimeline(points: [SpeedKey], duration: Double) -> OpaquePointer? {
+        let times = points.map { Float($0.time) }
+        let speeds = points.map { Float($0.speed) }
+        let curves = points.map { $0.ease.curve }.joined(separator: "\n")
+        return times.withUnsafeBufferPointer { t in
+            speeds.withUnsafeBufferPointer { v in
+                curves.withCString { easing in
+                    am_ios_timeline_create(t.baseAddress, v.baseAddress, easing, Int32(points.count), duration)
+                }
+            }
+        }
+    }
+    var remappedDuration: Double {
+        guard sourceDuration > 0,
+              let timing = makeNativeTimeline(points: keys, duration: sourceDuration) else { return 0 }
+        defer { am_ios_timeline_destroy(timing) }
+        return am_ios_timeline_duration(timing)
+    }
+
     func exportMP4() {
         guard let source, !busy else {return}
         let copyKeys = keys
@@ -167,6 +187,10 @@ final class MotionModel: ObservableObject {
         busy = true; exported = nil; status = "Экспорт MP4…"
         Task {
             do {
+                guard let nativeTime = makeNativeTimeline(points: copyKeys, duration: seconds) else {
+                    throw NSError(domain: "AbsentMotionIOSTiming", code: 1)
+                }
+                defer { am_ios_timeline_destroy(nativeTime) }
                 let asset = AVURLAsset(url:source)
                 guard let video = try await asset.loadTracks(withMediaType:.video).first else { throw NSError(domain:"Motion",code:2) }
                 let audio = try await asset.loadTracks(withMediaType:.audio).first
@@ -183,9 +207,10 @@ final class MotionModel: ObservableObject {
                     let startTime=CMTime(seconds:begin,preferredTimescale:timescale)
                     let duration=CMTime(seconds:end-begin,preferredTimescale:timescale)
                     if duration <= .zero {continue}
-                    let u=(Double(index)+0.5)/Double(count)
-                    let k=max(0.1, min(8,Self.rate(keys:copyKeys, at:u)))
-                    let stretched=CMTime(seconds:(end-begin)/k,preferredTimescale:timescale)
+                    // Integrate the original C++ speed/easing curve across the entire segment.
+                    let outputStart = am_ios_timeline_output_seconds(nativeTime, begin)
+                    let outputEnd = am_ios_timeline_output_seconds(nativeTime, end)
+                    let stretched=CMTime(seconds:max(0.00001,outputEnd-outputStart),preferredTimescale:timescale)
                     try v.insertTimeRange(CMTimeRange(start:startTime,duration:duration),of:video,at:position)
                     v.scaleTimeRange(CMTimeRange(start:position,duration:duration),toDuration:stretched)
                     if let audio,let a {
@@ -283,6 +308,14 @@ struct ContentView: View {
                                 Divider().opacity(0.15)
                             }
                         }.padding(12).background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    if model.sourceDuration > 0 {
+                        HStack {
+                            Text(String(format: "Длительность после ремапа: %.2f c", model.remappedDuration))
+                            Spacer()
+                            Text("AbsentMotion C++")
+                                .foregroundStyle(.orange)
+                        }.font(.caption2)
                     }
                     Text("СКОРОСТЬ · ТАЙМ-РЕМАП").font(.caption.bold())
                         Spacer()
