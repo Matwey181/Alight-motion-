@@ -184,12 +184,12 @@ struct GraphEditor: View {
                     for i in 0...120 {
                         let x=Double(i)/120
                         let y=(8-model.speed(at:x))/7.9
-                        let point=CGPoint(x:12+w*x,y:12+h*y)
+                        let point=CGPoint(x:12+w*CGFloat(x),y:12+h*CGFloat(y))
                         if i==0 {p.move(to:point)} else {p.addLine(to:point)}
                     }
                 }.stroke(.orange,style:StrokeStyle(lineWidth:2.5,lineCap:.round))
                 ForEach(model.keys) { k in
-                    let x=12+w*k.time, y=12+h*(8-k.speed)/7.9
+                    let x=12+w*CGFloat(k.time), y=12+h*CGFloat((8-k.speed)/7.9)
                     Rectangle().fill(model.chosen == k.id ? .orange:.white)
                         .frame(width:14,height:14)
                         .rotationEffect(.degrees(45))
@@ -197,7 +197,7 @@ struct GraphEditor: View {
                         .onTapGesture {model.chosen=k.id;model.seek(k.time)}
                         .gesture(DragGesture(minimumDistance:1).onChanged { d in
                             model.chosen=k.id
-                            model.move(k.id,t:Double((d.location.x+x-12)/w),speed:8-Double((d.location.y+y-12)/h)*7.9)
+                            model.move(k.id,t:k.time+Double(d.translation.width/w),speed:k.speed-Double(d.translation.height/h)*7.9)
                         })
                 }
             }.clipped()
