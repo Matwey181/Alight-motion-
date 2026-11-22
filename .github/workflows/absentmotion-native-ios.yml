@@ -25,15 +25,25 @@ jobs:
             shared/cpp/easing.cpp ios/native/AMEasingBridge.cpp ios/native/port_smoke.cpp \
             -o build/native-test/easing_test
           build/native-test/easing_test
-      - name: Compile original C++ easing to iOS arm64 static library
+      - name: Test original scene XML parser on macOS
+        run: |
+          set -euo pipefail
+          xcrun --sdk macosx clang++ -std=c++20 -O2 -Ishared/cpp -Iios/native \
+            shared/cpp/xml.cpp ios/native/AMProjectBridge.cpp ios/native/project_smoke.cpp \
+            -lexpat -o build/native-test/scene_test
+          build/native-test/scene_test
+      - name: Compile original easing and scene parser for iOS ARM64
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p build/ios build/simulator
           IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
           IOS_CLANG="$(xcrun --sdk iphoneos --find clang++)"
-          for filename in easing AMEasingBridge; do
-            if [[ "$filename" == easing ]]; then SRC=shared/cpp/easing.cpp; else SRC=ios/native/AMEasingBridge.cpp; fi
+          for filename in easing AMEasingBridge xml AMProjectBridge; do
+            case "$filename" in
+              easing|xml) SRC="shared/cpp/$filename.cpp" ;;
+              *) SRC="ios/native/$filename.cpp" ;;
+            esac
             "$IOS_CLANG" -std=c++20 -O2 -arch arm64 -miphoneos-version-min=17.0 \
               -isysroot "$IOS_SDK" -Ishared/cpp -Iios/native -c "$SRC" -o "build/ios/$filename.o"
           done
@@ -46,7 +56,7 @@ jobs:
               -isysroot "$SIM_SDK" -Ishared/cpp -Iios/native -c "$SRC" -o "build/simulator/$filename.o"
           done
           xcrun --sdk iphonesimulator libtool -static -o build/simulator/libAbsentMotionCore.a build/simulator/*.o
-          cp ios/native/AMEasingBridge.h build/ios/
+          cp ios/native/AMEasingBridge.h ios/native/AMProjectBridge.h build/ios/
       - name: Upload original native core for iOS
         uses: actions/upload-artifact@v4
         with:
@@ -54,5 +64,6 @@ jobs:
           path: |
             build/ios/libAbsentMotionCore.a
             build/ios/AMEasingBridge.h
+            build/ios/AMProjectBridge.h
             build/simulator/libAbsentMotionCore.a
           if-no-files-found: error
