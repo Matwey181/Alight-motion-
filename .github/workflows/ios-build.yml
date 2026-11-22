@@ -1,0 +1,41 @@
+name: Build iOS time-remap IPA
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build-ios:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml
+      - name: Build unsigned device application
+        run: |
+          xcodebuild -project MotionLab.xcodeproj \
+            -scheme MotionLab \
+            -sdk iphoneos \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/MotionBuild" \
+            CODE_SIGNING_ALLOWED=NO clean build
+      - name: Package IPA
+        run: |
+          set -e
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$RUNNER_TEMP/MotionBuild/Build/Products/Release-iphoneos/MotionLab.app" "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -q -r "$GITHUB_WORKSPACE/MotionLab-unsigned.ipa" Payload)
+          file "$GITHUB_WORKSPACE/MotionLab-unsigned.ipa"
+          unzip -l "$GITHUB_WORKSPACE/MotionLab-unsigned.ipa" | head -n 15
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MotionLab-unsigned-IPA
+          path: MotionLab-unsigned.ipa
+          if-no-files-found: error
