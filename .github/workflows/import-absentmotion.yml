@@ -1,0 +1,78 @@
+name: Import actual AbsentMotion source
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/import-absentmotion.yml
+
+permissions:
+  contents: write
+
+jobs:
+  import-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Clone original AbsentMotion source
+        run: |
+          git clone --depth 1 --single-branch --branch main https://github.com/Comett1225/AbsentMotion.git "$RUNNER_TEMP/absent-upstream"
+          echo "Original source commit: $(git -C "$RUNNER_TEMP/absent-upstream" rev-parse HEAD)"
+
+      - name: Create separate source port branch and apply speed diamonds
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c absentmotion-ios-port
+          git rm -rfq .
+          git clean -fdx
+          rsync -a --exclude=.git "$RUNNER_TEMP/absent-upstream/" ./
+          python3 - <<'PY'
+          from pathlib import Path
+          src = Path("shared/kotlin/app/absentmotion/ui/editor/panels/SpeedCurvePanel.kt")
+          text = src.read_text()
+          original = {
+              "drawCircle(ink, 8.dp.toPx(), at)": "drawSpeedDiamond(ink, 8.dp.toPx(), at)",
+              "drawCircle(accent, 6.dp.toPx(), at)": "drawSpeedDiamond(accent, 6.dp.toPx(), at)",
+              "else drawCircle(ink, 5.dp.toPx(), at)": "else drawSpeedDiamond(ink, 5.dp.toPx(), at)"
+          }
+          for old, new in original.items():
+              assert text.count(old) == 1, "Upstream changed: " + old
+              text = text.replace(old, new)
+          text += """
+
+          // Diamond markers in the speed graph, consistent with the timeline keyframes.
+          private fun DrawScope.drawSpeedDiamond(color: Color, radius: Float, at: Offset) {
+              val shape = Path().apply {
+                  moveTo(at.x, at.y - radius)
+                  lineTo(at.x + radius, at.y)
+                  lineTo(at.x, at.y + radius)
+                  lineTo(at.x - radius, at.y)
+                  close()
+              }
+              drawPath(shape, color)
+          }
+          """
+          src.write_text(text)
+          Path("IOS_PORT_STATUS.md").write_text("""# iOS port status
+
+          This branch contains the **original AbsentMotion source tree** imported from [Comett1225/AbsentMotion](https://github.com/Comett1225/AbsentMotion), with the existing speed-curve editor updated to draw diamond keyframe markers instead of circles.
+
+          **Not an iOS port or an IPA.** The existing application builds for Android and desktop; the current Gradle project has no iOS target. The Kotlin UI uses Android Compose/resources/platform services and the media/graphics engine relies on platform-specific native libraries. An actual iOS port needs a supported iOS UI/runtime, native video decode/encode/audio backend, render engine bindings, platform file handling, project persistence and extensive device validation.
+
+          Existing speed features: keyframed speed map, graph easing/presets, speed curves, manual time remapping. These live in `shared/kotlin/app/absentmotion/model/SpeedCurve.kt`, `VideoTiming.kt`, and `ui/editor/panels/SpeedCurvePanel.kt`.
+
+          The GPL-3.0 upstream LICENSE and copyright notices are preserved. The prototype on this repository's `main` branch is a separate SwiftUI demo, not the source port.
+          """)
+          PY
+          git add -A
+          git commit -m "Import AbsentMotion upstream and show speed graph keyframes as diamonds"
+          git push origin HEAD:refs/heads/absentmotion-ios-port
+      - name: Verify branch source
+        run: |
+          git ls-remote --exit-code origin refs/heads/absentmotion-ios-port
