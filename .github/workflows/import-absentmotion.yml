@@ -28,10 +28,13 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp -a .github/workflows "$RUNNER_TEMP/own-workflows"
           git switch -c absentmotion-ios-port
           git rm -rfq .
           git clean -fdx
-          rsync -a --exclude=.git "$RUNNER_TEMP/absent-upstream/" ./
+          rsync -a --exclude=.git --exclude=.github/workflows "$RUNNER_TEMP/absent-upstream/" ./
+          mkdir -p .github
+          cp -a "$RUNNER_TEMP/own-workflows" .github/workflows
           python3 - <<'PY'
           from pathlib import Path
           src = Path("shared/kotlin/app/absentmotion/ui/editor/panels/SpeedCurvePanel.kt")
@@ -58,10 +61,35 @@ jobs:
               drawPath(shape, color)
           }
           """
+          # Easing can now be chosen separately for the selected speed-curve keyframe.
+          controls = """        if (chosen != null && chosen > 0) {
+              Row(Modifier.fillMaxWidth().height(30.dp).horizontalScroll(rememberScrollState()), Arrangement.spacedBy(6.dp)) {
+                  for ((name, easing) in SpeedGraphEasings) {
+                      RampChip(name, true, points[chosen].ease == easing, modifier = Modifier.height(30.dp)) {
+                          state.applySpeedCurve(points.mapIndexed { i, point -> if (i == chosen) point.copy(ease = easing) else point })
+                      }
+                  }
+              }
+          }
+          """
+          marker = '        Row(Modifier.fillMaxWidth().height(34.dp), Arrangement.spacedBy(6.dp), Alignment.CenterVertically) {'
+          assert text.count(marker) == 1, "Could not locate speed edit toolbar"
+          text = text.replace(marker, controls + marker)
+          text += """
+          // Segment-easing options for speed keyframes (applied to the segment ending at the selected point).
+          private val SpeedGraphEasings = listOf(
+              "Linear" to "linear",
+              "Smooth" to "cubicBezier 0.42 0.0 0.58 1.0",
+              "Ease in" to "cubicBezier 0.42 0.0 1.0 1.0",
+              "Ease out" to "cubicBezier 0.0 0.0 0.58 1.0",
+              "Fast" to "cubicBezier 0.1 0.9 0.2 1.0",
+              "Slow" to "cubicBezier 0.8 0.0 0.9 0.1"
+          )
+          """
           src.write_text(text)
           Path("IOS_PORT_STATUS.md").write_text("""# iOS port status
 
-          This branch contains the **original AbsentMotion source tree** imported from [Comett1225/AbsentMotion](https://github.com/Comett1225/AbsentMotion), with the existing speed-curve editor updated to draw diamond keyframe markers instead of circles.
+          This branch contains the **original AbsentMotion source tree** imported from [Comett1225/AbsentMotion](https://github.com/Comett1225/AbsentMotion), with the existing speed-curve editor updated to draw diamond keyframe markers and allow per-keyframe speed-graph easing presets.
 
           **Not an iOS port or an IPA.** The existing application builds for Android and desktop; the current Gradle project has no iOS target. The Kotlin UI uses Android Compose/resources/platform services and the media/graphics engine relies on platform-specific native libraries. An actual iOS port needs a supported iOS UI/runtime, native video decode/encode/audio backend, render engine bindings, platform file handling, project persistence and extensive device validation.
 
